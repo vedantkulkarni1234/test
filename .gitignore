@@ -1,0 +1,47 @@
+# Scan Results
+*.jsonl
+results*.json
+results*.txt
+scan_results*.log
+
+# Temporary Files
+*.tmp
+*.temp
+*~
+.*.swp
+.*.swo
+
+# IDE / Editor Files
+.vscode/
+.idea/
+*.sublime-project
+*.sublime-workspace
+.DS_Store
+
+# Target Lists (if generated)
+targets_*.txt
+hosts_*.txt
+
+# Logs
+*.log
+logs/
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+.pytest_cache/
+
+# Node/npm (if any)
+node_modules/
+npm-debug.log
+yarn-error.log
+
+# OS
+Thumbs.db
+.AppleDouble
+.LSOverride
+
+# Tool artifacts
+.bashrc_history
+.bash_history
