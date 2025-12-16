@@ -1,0 +1,35 @@
+# Example configuration file for Agentic RAG System
+# Copy this file and modify as needed, then use --config-file option
+
+{
+  "GEMINI_API_KEY": "your_gemini_api_key_here",
+  
+  "PDF_MONITOR_PATH": "./knowledge_hub",
+  "EMBEDDING_CACHE_PATH": "./embeddings_cache",
+  "VECTOR_INDEX_PATH": "./vector_index.json",
+  "SYSTEM_DB_PATH": "./rag_system.db",
+  
+  "EMBEDDING_MODEL": "all-MiniLM-L6-v2",
+  "EMBEDDING_DIMENSION": 384,
+  
+  "ASTAR_HEURISTIC_WEIGHT": 1.0,
+  "MAX_SEARCH_DEPTH": 10,
+  "RELEVANCE_THRESHOLD": 0.7,
+  
+  "TOP_K_DOCUMENTS": 5,
+  "CHUNK_SIZE": 512,
+  "CHUNK_OVERLAP": 50,
+  "CONTEXT_WINDOW_SIZE": 8000,
+  
+  "MAX_AGENT_STEPS": 10,
+  "AGENT_TIMEOUT": 300,
+  "CONCURRENCY_LIMIT": 4,
+  
+  "MONITOR_INTERVAL": 5.0,
+  "LOG_LEVEL": "INFO",
+  "ENABLE_METRICS": true,
+  
+  "MAX_EMBEDDING_BATCH_SIZE": 32,
+  "MAX_MEMORY_USAGE_MB": 2048,
+  "CACHE_TTL_HOURS": 24
+}
