@@ -1,0 +1,95 @@
+# Agentic RAG System .gitignore
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+
+# Virtual environments
+venv/
+env/
+ENV/
+.venv/
+.env/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# RAG System specific
+knowledge_hub/
+embeddings_cache/
+vector_index.pkl
+vector_index.pkl.db
+rag_system.db
+extracted_texts/
+
+# Demo and test outputs
+demo_knowledge_hub/
+rag_demo_report.json
+demo_output/
+test_results/
+*.log
+
+# Generated files
+cache/
+tmp/
+temp/
+*.tmp
+
+# API keys and secrets
+.env
+secrets.json
+config.json
+keys/
+
+# Large model files
+models/
+.checkpoints/
+transformers_cache/
+
+# Export files (can be large)
+*.export
+backup_*.json
+
+# Monitoring data
+monitoring_data/
+ingestion_history/
+
+# Search indices
+search_index/
+faiss_index/
+
+# User uploads (if any)
+uploads/
+user_files/
