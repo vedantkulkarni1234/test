@@ -181,19 +181,20 @@ class AgenticRAGSystem:
         logger.info("All RAG components initialized")
     
     def _initialize_monitoring(self):
-        """Initialize PDF monitoring."""
+        """Initialize PDF monitoring with multimodal support."""
         try:
             self.pdf_monitor = PDFMonitor(
                 config.PDF_MONITOR_PATH,
                 self.pdf_processor,
-                self.embedding_manager
+                self.embedding_manager,
+                self.gemini_client  # Pass Gemini client for image description
             )
             
             # Add monitoring callbacks
             self.pdf_monitor.add_ingestion_callback(self._on_pdf_ingested)
             self.pdf_monitor.add_error_callback(self._on_pdf_ingestion_error)
             
-            logger.info("PDF monitoring initialized")
+            logger.info("PDF monitoring initialized with multimodal support")
             
         except Exception as e:
             logger.error(f"Failed to initialize PDF monitoring: {e}")
@@ -268,6 +269,48 @@ class AgenticRAGSystem:
             
             # Create error response
             return self._create_empty_response(query, start_time, f"Processing error: {str(e)}")
+    
+    def search_images(self, query: str, top_k: int = 5) -> List[Dict[str, Any]]:
+        """
+        Search for images based on description similarity.
+        
+        Args:
+            query: Search query
+            top_k: Number of top results to return
+            
+        Returns:
+            List of matching images with metadata
+        """
+        logger.info(f"Searching for images: {query[:50]}...")
+        
+        try:
+            results = self.embedding_manager.search_images(query, top_k)
+            
+            logger.info(f"Found {len(results)} matching images")
+            return results
+            
+        except Exception as e:
+            logger.error(f"Image search failed: {e}")
+            return []
+    
+    def get_image_by_description(self, description: str) -> Optional[Dict[str, Any]]:
+        """
+        Find an image based on description (e.g., "trend graph from Q3 report").
+        
+        Args:
+            description: Description of the image to find
+            
+        Returns:
+            Image metadata dictionary or None if not found
+        """
+        logger.info(f"Looking for image: {description}")
+        
+        results = self.search_images(description, top_k=1)
+        
+        if results:
+            return results[0]
+        
+        return None
     
     def _execute_agentic_pipeline(self, rag_query: RAGQuery, context_documents: List[Dict[str, Any]]) -> Dict[str, Any]:
         """Execute agentic task pipeline."""

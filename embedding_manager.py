@@ -153,11 +153,36 @@ class LocalVectorIndex:
             """)
             
             conn.execute("""
+                CREATE TABLE IF NOT EXISTS image_metadata (
+                    image_id TEXT PRIMARY KEY,
+                    file_path TEXT NOT NULL,
+                    source_pdf TEXT NOT NULL,
+                    page_number INTEGER NOT NULL,
+                    image_path TEXT NOT NULL,
+                    width INTEGER,
+                    height INTEGER,
+                    format TEXT,
+                    description TEXT,
+                    created_at TEXT NOT NULL,
+                    access_count INTEGER DEFAULT 0,
+                    last_accessed TEXT
+                )
+            """)
+            
+            conn.execute("""
                 CREATE INDEX IF NOT EXISTS idx_file_path ON document_metadata(file_path)
             """)
             
             conn.execute("""
                 CREATE INDEX IF NOT EXISTS idx_access_count ON document_metadata(access_count DESC)
+            """)
+            
+            conn.execute("""
+                CREATE INDEX IF NOT EXISTS idx_image_source ON image_metadata(source_pdf)
+            """)
+            
+            conn.execute("""
+                CREATE INDEX IF NOT EXISTS idx_image_page ON image_metadata(page_number)
             """)
             
             conn.commit()
@@ -380,6 +405,108 @@ class LocalVectorIndex:
                 }
                 for chunk_id, stats in sorted_chunks
             ]
+    
+    def store_images(self, document_data: Dict[str, Any]) -> List[str]:
+        """
+        Store image metadata in the database.
+        
+        Args:
+            document_data: Document information containing images
+            
+        Returns:
+            List of stored image IDs
+        """
+        if 'images' not in document_data or not document_data['images']:
+            return []
+        
+        image_ids = []
+        
+        with sqlite3.connect(self.db_path) as conn:
+            for image in document_data['images']:
+                image_id = image['id']
+                image_ids.append(image_id)
+                
+                conn.execute("""
+                    INSERT OR REPLACE INTO image_metadata 
+                    (image_id, file_path, source_pdf, page_number, image_path, 
+                     width, height, format, description, created_at)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """, (
+                    image_id,
+                    image['file_path'],
+                    document_data['file_path'],
+                    image['page_number'],
+                    image['file_path'],
+                    image['width'],
+                    image['height'],
+                    image['format'],
+                    image.get('description', ''),
+                    image['extracted_at']
+                ))
+            
+            conn.commit()
+        
+        logger.info(f"Stored metadata for {len(image_ids)} images")
+        return image_ids
+    
+    def get_image_metadata(self, image_id: str) -> Optional[Dict[str, Any]]:
+        """
+        Retrieve image metadata.
+        
+        Args:
+            image_id: ID of the image
+            
+        Returns:
+            Image metadata dictionary or None if not found
+        """
+        with sqlite3.connect(self.db_path) as conn:
+            cursor = conn.execute("""
+                SELECT * FROM image_metadata WHERE image_id = ?
+            """, (image_id,))
+            
+            row = cursor.fetchone()
+            if row:
+                columns = [desc[0] for desc in cursor.description]
+                return dict(zip(columns, row))
+        
+        return None
+    
+    def search_images_by_source(self, source_pdf: str) -> List[Dict[str, Any]]:
+        """
+        Retrieve all images from a specific PDF.
+        
+        Args:
+            source_pdf: Path to the source PDF
+            
+        Returns:
+            List of image metadata dictionaries
+        """
+        with sqlite3.connect(self.db_path) as conn:
+            cursor = conn.execute("""
+                SELECT * FROM image_metadata WHERE source_pdf = ?
+                ORDER BY page_number, image_id
+            """, (source_pdf,))
+            
+            columns = [desc[0] for desc in cursor.description]
+            return [dict(zip(columns, row)) for row in cursor.fetchall()]
+    
+    def update_image_description(self, image_id: str, description: str):
+        """
+        Update the description of an image.
+        
+        Args:
+            image_id: ID of the image
+            description: Generated description text
+        """
+        with sqlite3.connect(self.db_path) as conn:
+            conn.execute("""
+                UPDATE image_metadata 
+                SET description = ?
+                WHERE image_id = ?
+            """, (description, image_id))
+            conn.commit()
+        
+        logger.debug(f"Updated description for image {image_id}")
 
 
 class EmbeddingManager:
@@ -405,15 +532,16 @@ class EmbeddingManager:
         
         logger.info("Initialized EmbeddingManager")
     
-    def process_document(self, document_data: Dict[str, Any]) -> List[str]:
+    def process_document(self, document_data: Dict[str, Any], gemini_client=None) -> Tuple[List[str], List[str]]:
         """
-        Process a document and generate embeddings.
+        Process a document and generate embeddings for text and images.
         
         Args:
-            document_data: Document information with chunks
+            document_data: Document information with chunks and images
+            gemini_client: Optional Gemini client for image description
             
         Returns:
-            List of chunk IDs
+            Tuple of (chunk_ids, image_ids)
         """
         logger.info(f"Processing document: {document_data['filename']}")
         
@@ -430,7 +558,77 @@ class EmbeddingManager:
             
             logger.info(f"Generated embeddings for {len(chunk_texts)} chunks")
         
-        return chunk_ids
+        # Process images if available
+        image_ids = []
+        if 'images' in document_data and document_data['images']:
+            image_ids = self.process_images(document_data, gemini_client)
+        
+        return chunk_ids, image_ids
+    
+    def process_images(self, document_data: Dict[str, Any], gemini_client=None) -> List[str]:
+        """
+        Process images from a document, optionally generating descriptions.
+        
+        Args:
+            document_data: Document information containing images
+            gemini_client: Optional Gemini client for image description
+            
+        Returns:
+            List of processed image IDs
+        """
+        if 'images' not in document_data or not document_data['images']:
+            return []
+        
+        logger.info(f"Processing {len(document_data['images'])} images from {document_data['filename']}")
+        
+        # Generate descriptions for images if Gemini client is provided
+        if gemini_client:
+            for image in document_data['images']:
+                try:
+                    # Determine MIME type from format
+                    mime_type = f"image/{image['format']}"
+                    if image['format'] == 'jpg':
+                        mime_type = 'image/jpeg'
+                    
+                    # Generate description using Gemini
+                    response = gemini_client.describe_image(
+                        image['base64'],
+                        mime_type=mime_type
+                    )
+                    
+                    image['description'] = response.text
+                    logger.debug(f"Generated description for image {image['id']}")
+                    
+                    # Generate embedding for the description
+                    if response.text:
+                        description_embedding = self.generator.generate_embedding(response.text)
+                        # Store with special image ID prefix
+                        image_embedding_id = f"img_{image['id']}"
+                        self.vector_index.store_embeddings([image_embedding_id], [description_embedding])
+                        
+                        # Update metadata to link image description to embedding
+                        self.vector_index._metadata_cache[image_embedding_id] = {
+                            'file_path': document_data['file_path'],
+                            'filename': document_data['filename'],
+                            'chunk_text': response.text,
+                            'chunk_index': -1,  # Special index for images
+                            'created_at': image['extracted_at'],
+                            'file_hash': document_data['file_hash'],
+                            'is_image': True,
+                            'image_id': image['id'],
+                            'image_path': image['file_path'],
+                            'page_number': image['page_number']
+                        }
+                        
+                except Exception as e:
+                    logger.error(f"Failed to generate description for image {image['id']}: {e}")
+                    image['description'] = ''
+        
+        # Store image metadata
+        image_ids = self.vector_index.store_images(document_data)
+        
+        logger.info(f"Processed {len(image_ids)} images")
+        return image_ids
     
     def get_document_chunks(self, file_path: str) -> List[Dict[str, Any]]:
         """
@@ -495,3 +693,56 @@ class EmbeddingManager:
         # Sort by similarity and return top_k
         similarities.sort(key=lambda x: x['similarity'], reverse=True)
         return similarities[:top_k]
+    
+    def search_images(self, query: str, top_k: int = 5) -> List[Dict[str, Any]]:
+        """
+        Search for images based on description similarity.
+        
+        Args:
+            query: Search query
+            top_k: Number of top results to return
+            
+        Returns:
+            List of matching images with metadata
+        """
+        # Generate query embedding
+        query_embedding = self.generator.generate_embedding(query)
+        
+        # Search among image embeddings
+        image_results = []
+        
+        with self.vector_index.index_lock:
+            for chunk_id, embedding in self.vector_index._embeddings_cache.items():
+                # Only process image embeddings
+                if not chunk_id.startswith('img_'):
+                    continue
+                
+                # Calculate cosine similarity
+                similarity = cosine_similarity(
+                    query_embedding.reshape(1, -1),
+                    embedding.reshape(1, -1)
+                )[0][0]
+                
+                metadata = self.vector_index._metadata_cache.get(chunk_id)
+                if metadata and metadata.get('is_image'):
+                    # Get full image metadata from database
+                    image_id = metadata['image_id']
+                    image_data = self.vector_index.get_image_metadata(image_id)
+                    
+                    if image_data:
+                        image_results.append({
+                            'image_id': image_id,
+                            'similarity': float(similarity),
+                            'description': metadata['chunk_text'],
+                            'filename': metadata['filename'],
+                            'file_path': metadata['file_path'],
+                            'image_path': metadata['image_path'],
+                            'page_number': metadata['page_number'],
+                            'width': image_data.get('width'),
+                            'height': image_data.get('height'),
+                            'format': image_data.get('format')
+                        })
+        
+        # Sort by similarity and return top_k
+        image_results.sort(key=lambda x: x['similarity'], reverse=True)
+        return image_results[:top_k]
