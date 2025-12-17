@@ -20,6 +20,11 @@ httpx>=0.25.0
 # Data Processing
 scipy>=1.11.0
 
+# Glass Box UI (optional)
+streamlit>=1.37.0
+plotly>=5.22.0
+networkx>=3.2.1
+
 # Database (SQLite is built-in, but including for clarity)
 # sqlite3 is part of Python standard library
 
