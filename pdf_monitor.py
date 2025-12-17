@@ -129,21 +129,22 @@ class PDFHandler(FileSystemEventHandler):
                 self._processed_files = set(processed_list[-500:])
     
     def _process_pdf_file(self, file_path: Path):
-        """Process a single PDF file."""
+        """Process a single PDF file with text and image extraction."""
         try:
-            # Extract text from PDF
+            # Extract text and images from PDF
             extracted_data = self.pdf_processor.extract_text_from_pdf(file_path)
             
-            # Process document chunks and generate embeddings
-            chunk_ids = self.embedding_manager.process_document(extracted_data)
+            # Process document chunks and generate embeddings (with optional image description)
+            gemini_client = getattr(self.pdf_monitor, 'gemini_client', None)
+            chunk_ids, image_ids = self.embedding_manager.process_document(extracted_data, gemini_client)
             
             # Mark as processed
             self._mark_as_processed(file_path)
             
             # Notify monitoring system
-            self.pdf_monitor._notify_ingestion_success(file_path, extracted_data, chunk_ids)
+            self.pdf_monitor._notify_ingestion_success(file_path, extracted_data, chunk_ids, image_ids)
             
-            logger.info(f"Successfully processed {file_path.name}: {len(chunk_ids)} chunks created")
+            logger.info(f"Successfully processed {file_path.name}: {len(chunk_ids)} chunks and {len(image_ids)} images created")
             
         except Exception as e:
             logger.error(f"PDF processing failed for {file_path.name}: {e}")
@@ -162,7 +163,7 @@ class PDFMonitor:
     - Error handling and retry logic
     """
     
-    def __init__(self, monitor_path: Path, pdf_processor, embedding_manager):
+    def __init__(self, monitor_path: Path, pdf_processor, embedding_manager, gemini_client=None):
         """
         Initialize PDF monitor.
         
@@ -170,10 +171,12 @@ class PDFMonitor:
             monitor_path: Directory to monitor for PDF files
             pdf_processor: PDFProcessor instance
             embedding_manager: EmbeddingManager instance
+            gemini_client: Optional Gemini client for image description
         """
         self.monitor_path = Path(monitor_path)
         self.pdf_processor = pdf_processor
         self.embedding_manager = embedding_manager
+        self.gemini_client = gemini_client
         
         # Ensure monitor directory exists
         self.monitor_path.mkdir(parents=True, exist_ok=True)
@@ -336,16 +339,21 @@ class PDFMonitor:
             logger.error(f"One-time scan and process failed: {e}")
             raise
     
-    def _notify_ingestion_success(self, file_path: Path, extracted_data: Dict[str, Any], chunk_ids: List[str]):
+    def _notify_ingestion_success(self, file_path: Path, extracted_data: Dict[str, Any], chunk_ids: List[str], image_ids: List[str] = None):
         """Notify callbacks of successful ingestion."""
+        if image_ids is None:
+            image_ids = []
+        
         ingestion_event = {
             'event_type': 'ingestion_success',
             'file_path': str(file_path),
             'filename': file_path.name,
             'extracted_data': extracted_data,
             'chunk_ids': chunk_ids,
+            'image_ids': image_ids,
             'timestamp': datetime.now(),
             'chunks_count': len(chunk_ids),
+            'images_count': len(image_ids),
             'text_length': len(extracted_data.get('text', ''))
         }
         

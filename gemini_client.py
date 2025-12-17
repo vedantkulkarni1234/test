@@ -221,6 +221,53 @@ class GeminiClient:
             logger.error(f"Streaming request failed: {e}")
             raise GeminiError(f"Streaming request failed: {e}")
     
+    def describe_image(self, image_base64: str, mime_type: str = "image/jpeg", prompt: str = None) -> GeminiResponse:
+        """
+        Generate a description of an image using Gemini's multimodal capabilities.
+        
+        Args:
+            image_base64: Base64 encoded image data
+            mime_type: MIME type of the image (e.g., 'image/jpeg', 'image/png')
+            prompt: Optional custom prompt for image analysis
+            
+        Returns:
+            GeminiResponse with image description
+        """
+        if prompt is None:
+            prompt = """Analyze this image in detail. Describe:
+1. What type of visual content this is (chart, graph, diagram, photo, etc.)
+2. The main elements, data, or subjects shown
+3. Key insights, trends, or patterns visible
+4. Any text, labels, or annotations present
+5. The overall purpose or message of the image
+
+Provide a comprehensive description that would be useful for document search and retrieval."""
+        
+        images = [{
+            'base64': image_base64,
+            'mime_type': mime_type
+        }]
+        
+        request_config = GeminiRequest()
+        
+        try:
+            payload = self._prepare_request_payload(prompt, request_config, images)
+            
+            start_time = time.time()
+            response = self._make_api_request(payload)
+            latency = time.time() - start_time
+            
+            gemini_response = GeminiResponse.from_api_response(response)
+            self._update_request_stats(True, latency)
+            
+            logger.debug(f"Generated image description in {latency:.2f}s")
+            return gemini_response
+            
+        except Exception as e:
+            self._update_request_stats(False, 0.0)
+            logger.error(f"Image description failed: {e}")
+            raise GeminiError(f"Image description failed: {e}")
+    
     def batch_generate(self, prompts: List[str], context: List[str] = None, request_config: GeminiRequest = None) -> List[GeminiResponse]:
         """
         Generate responses for multiple prompts in batch.
@@ -317,11 +364,24 @@ class GeminiClient:
         
         return full_prompt
     
-    def _prepare_request_payload(self, prompt: str, request_config: GeminiRequest) -> Dict[str, Any]:
-        """Prepare request payload for API."""
+    def _prepare_request_payload(self, prompt: str, request_config: GeminiRequest, images: List[Dict[str, str]] = None) -> Dict[str, Any]:
+        """Prepare request payload for API with optional image support."""
+        parts = [{'text': prompt}]
+        
+        # Add images if provided
+        if images:
+            for img in images:
+                if 'base64' in img and 'mime_type' in img:
+                    parts.append({
+                        'inline_data': {
+                            'mime_type': img['mime_type'],
+                            'data': img['base64']
+                        }
+                    })
+        
         return {
             'contents': [{
-                'parts': [{'text': prompt}]
+                'parts': parts
             }],
             'generationConfig': {
                 'maxOutputTokens': request_config.max_tokens,
