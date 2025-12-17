@@ -44,6 +44,14 @@ rag = AgenticRAGSystem(
 result = rag.process_query("Analyze market trends and create a strategy report")
 ```
 
+## Glass Box A* Visualization (Streamlit)
+
+This repo includes a Streamlit UI that visualizes the document graph and animates which document nodes the A* retriever visits.
+
+```bash
+streamlit run glass_box_app.py
+```
+
 ## Configuration
 
 Environment variables:

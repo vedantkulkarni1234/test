@@ -405,6 +405,43 @@ class LocalVectorIndex:
                 }
                 for chunk_id, stats in sorted_chunks
             ]
+
+    def search_similar_chunks(self, query_embedding: np.ndarray, top_k: int = 5) -> List[Dict[str, Any]]:
+        """Find most similar document chunks to a query embedding.
+
+        This method is intentionally implemented on the LocalVectorIndex so higher-level
+        components (e.g., AStarRetriever) can depend only on the index interface.
+
+        Args:
+            query_embedding: Query embedding vector
+            top_k: Number of top similar chunks to return
+
+        Returns:
+            List of similar chunks with similarity scores
+        """
+        similarities: List[Dict[str, Any]] = []
+
+        with self.index_lock:
+            for chunk_id, embedding in self._embeddings_cache.items():
+                metadata = self._metadata_cache.get(chunk_id)
+                if not metadata or metadata.get('is_image'):
+                    continue
+
+                similarity = cosine_similarity(
+                    query_embedding.reshape(1, -1),
+                    embedding.reshape(1, -1)
+                )[0][0]
+
+                similarities.append({
+                    'chunk_id': chunk_id,
+                    'similarity': float(similarity),
+                    'chunk_text': metadata.get('chunk_text', ''),
+                    'file_path': metadata.get('file_path', ''),
+                    'filename': metadata.get('filename', '')
+                })
+
+        similarities.sort(key=lambda x: x['similarity'], reverse=True)
+        return similarities[:top_k]
     
     def store_images(self, document_data: Dict[str, Any]) -> List[str]:
         """
